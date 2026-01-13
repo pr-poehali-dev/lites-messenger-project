@@ -7,6 +7,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import Icon from '@/components/ui/icon';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Badge } from '@/components/ui/badge';
 
 type RegistrationStep = 'phone' | 'avatar' | 'nickname' | 'complete';
 type Section = 'chats' | 'contacts' | 'calls' | 'profile' | 'settings' | 'bots' | 'payments';
@@ -25,6 +30,16 @@ interface Chat {
   lastMessage: string;
   time: string;
   unread?: number;
+  type?: 'personal' | 'group' | 'channel';
+  members?: number;
+  description?: string;
+}
+
+interface Contact {
+  id: number;
+  name: string;
+  avatar: string;
+  username: string;
 }
 
 const EMOJI_AVATARS = ['😊', '😎', '🚀', '🎨', '🎮', '🎵', '⚡', '🌟', '🔥', '💎', '🦄', '🐱', '🐶', '🐼'];
@@ -43,11 +58,23 @@ export default function Index() {
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const [chats] = useState<Chat[]>([
-    { id: 1, name: 'Александр Иванов', avatar: '😊', lastMessage: 'Привет! Как дела?', time: '14:32' },
-    { id: 2, name: 'Мария Петрова', avatar: '🎨', lastMessage: 'Отправил файлы', time: '13:15', unread: 2 },
-    { id: 3, name: 'Команда Разработки', avatar: '🚀', lastMessage: 'Встреча в 15:00', time: '12:48', unread: 5 },
+  const [chats, setChats] = useState<Chat[]>([
+    { id: 1, name: 'Александр Иванов', avatar: '😊', lastMessage: 'Привет! Как дела?', time: '14:32', type: 'personal' },
+    { id: 2, name: 'Мария Петрова', avatar: '🎨', lastMessage: 'Отправил файлы', time: '13:15', unread: 2, type: 'personal' },
+    { id: 3, name: 'Команда Разработки', avatar: '🚀', lastMessage: 'Встреча в 15:00', time: '12:48', unread: 5, type: 'group', members: 12 },
   ]);
+
+  const [contacts, setContacts] = useState<Contact[]>([
+    { id: 1, name: 'Александр Иванов', avatar: '😊', username: '@alex_ivanov' },
+    { id: 2, name: 'Мария Петрова', avatar: '🎨', username: '@maria_pet' },
+    { id: 3, name: 'Иван Сидоров', avatar: '🎮', username: '@ivan_sid' },
+  ]);
+
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [createType, setCreateType] = useState<'group' | 'channel'>('group');
+  const [createName, setCreateName] = useState('');
+  const [createDescription, setCreateDescription] = useState('');
+  const [selectedContacts, setSelectedContacts] = useState<number[]>([]);
 
   const [messages, setMessages] = useState<Message[]>([
     { id: 1, text: 'Привет! Как дела?', sender: 'other', time: '14:30' },
@@ -85,6 +112,34 @@ export default function Index() {
         setIsRegistered(true);
       }, 1500);
     }
+  };
+
+  const handleCreateGroupOrChannel = () => {
+    if (createName && selectedContacts.length > 0) {
+      const newChat: Chat = {
+        id: chats.length + 1,
+        name: createName,
+        avatar: createType === 'group' ? '👥' : '📢',
+        lastMessage: createType === 'group' ? 'Группа создана' : 'Канал создан',
+        time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+        type: createType,
+        members: selectedContacts.length + 1,
+        description: createDescription,
+      };
+      setChats([newChat, ...chats]);
+      setIsCreateDialogOpen(false);
+      setCreateName('');
+      setCreateDescription('');
+      setSelectedContacts([]);
+    }
+  };
+
+  const toggleContactSelection = (contactId: number) => {
+    setSelectedContacts(prev => 
+      prev.includes(contactId) 
+        ? prev.filter(id => id !== contactId)
+        : [...prev, contactId]
+    );
   };
 
   const handleSendMessage = () => {
@@ -273,7 +328,21 @@ export default function Index() {
                     </Avatar>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
-                        <p className="font-semibold truncate">{chat.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold truncate">{chat.name}</p>
+                          {chat.type === 'group' && (
+                            <Badge variant="secondary" className="text-xs px-1.5 py-0">
+                              <Icon name="Users" size={12} className="mr-1" />
+                              {chat.members}
+                            </Badge>
+                          )}
+                          {chat.type === 'channel' && (
+                            <Badge variant="secondary" className="text-xs px-1.5 py-0">
+                              <Icon name="Radio" size={12} className="mr-1" />
+                              Канал
+                            </Badge>
+                          )}
+                        </div>
                         <span className="text-xs text-muted-foreground">{chat.time}</span>
                       </div>
                       <div className="flex items-center justify-between">
@@ -291,11 +360,28 @@ export default function Index() {
             </ScrollArea>
           </TabsContent>
 
-          <TabsContent value="contacts" className="flex-1 p-4 m-0">
-            <div className="text-center py-12 text-muted-foreground">
-              <Icon name="UserPlus" size={48} className="mx-auto mb-4 opacity-50" />
-              <p>Добавьте контакты</p>
-            </div>
+          <TabsContent value="contacts" className="flex-1 m-0">
+            <ScrollArea className="h-[calc(100vh-180px)]">
+              {contacts.map((contact) => (
+                <div
+                  key={contact.id}
+                  className="p-4 border-b border-border cursor-pointer transition-colors hover:bg-muted/50"
+                >
+                  <div className="flex items-center space-x-3">
+                    <Avatar>
+                      <AvatarFallback className="text-2xl">{contact.avatar}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <p className="font-semibold">{contact.name}</p>
+                      <p className="text-sm text-muted-foreground">{contact.username}</p>
+                    </div>
+                    <Button variant="ghost" size="icon">
+                      <Icon name="MessageSquare" size={18} />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </ScrollArea>
           </TabsContent>
 
           <TabsContent value="calls" className="flex-1 p-4 m-0">
@@ -346,9 +432,98 @@ export default function Index() {
           <Button variant={currentSection === 'payments' ? 'secondary' : 'ghost'} size="sm" onClick={() => setCurrentSection('payments')}>
             <Icon name="CreditCard" size={18} />
           </Button>
-          <Button variant="ghost" size="sm">
-            <Icon name="Plus" size={18} />
-          </Button>
+          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="ghost" size="sm">
+                <Icon name="Plus" size={18} />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Создать группу или канал</DialogTitle>
+                <DialogDescription>
+                  Выберите тип, добавьте участников и заполните информацию
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <Label>Тип</Label>
+                  <RadioGroup value={createType} onValueChange={(v) => setCreateType(v as 'group' | 'channel')}>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="group" id="group" />
+                      <Label htmlFor="group" className="flex items-center gap-2 cursor-pointer">
+                        <Icon name="Users" size={18} />
+                        Группа
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="channel" id="channel" />
+                      <Label htmlFor="channel" className="flex items-center gap-2 cursor-pointer">
+                        <Icon name="Radio" size={18} />
+                        Канал
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Название</Label>
+                  <Input
+                    placeholder={createType === 'group' ? 'Название группы' : 'Название канала'}
+                    value={createName}
+                    onChange={(e) => setCreateName(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Описание (опционально)</Label>
+                  <Textarea
+                    placeholder="Опишите группу или канал..."
+                    value={createDescription}
+                    onChange={(e) => setCreateDescription(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+
+                <div className="space-y-3">
+                  <Label>Участники ({selectedContacts.length} выбрано)</Label>
+                  <ScrollArea className="h-48 border rounded-lg p-2">
+                    {contacts.map((contact) => (
+                      <div
+                        key={contact.id}
+                        onClick={() => toggleContactSelection(contact.id)}
+                        className={`p-3 rounded-lg cursor-pointer transition-colors mb-2 ${
+                          selectedContacts.includes(contact.id) ? 'bg-primary/10 border border-primary' : 'hover:bg-muted'
+                        }`}
+                      >
+                        <div className="flex items-center space-x-3">
+                          <Avatar className="w-8 h-8">
+                            <AvatarFallback className="text-lg">{contact.avatar}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1">
+                            <p className="font-medium text-sm">{contact.name}</p>
+                            <p className="text-xs text-muted-foreground">{contact.username}</p>
+                          </div>
+                          {selectedContacts.includes(contact.id) && (
+                            <Icon name="Check" size={18} className="text-primary" />
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </ScrollArea>
+                </div>
+
+                <Button 
+                  onClick={handleCreateGroupOrChannel}
+                  disabled={!createName || selectedContacts.length === 0}
+                  className="w-full gradient-primary text-white"
+                >
+                  Создать {createType === 'group' ? 'группу' : 'канал'}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
