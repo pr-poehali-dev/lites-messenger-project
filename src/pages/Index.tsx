@@ -42,6 +42,15 @@ interface Contact {
   username: string;
 }
 
+interface Call {
+  id: number;
+  contactId: number;
+  type: 'incoming' | 'outgoing' | 'missed';
+  callType: 'voice' | 'video';
+  duration?: string;
+  time: string;
+}
+
 const EMOJI_AVATARS = ['😊', '😎', '🚀', '🎨', '🎮', '🎵', '⚡', '🌟', '🔥', '💎', '🦄', '🐱', '🐶', '🐼'];
 
 export default function Index() {
@@ -58,11 +67,7 @@ export default function Index() {
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const [chats, setChats] = useState<Chat[]>([
-    { id: 1, name: 'Александр Иванов', avatar: '😊', lastMessage: 'Привет! Как дела?', time: '14:32', type: 'personal' },
-    { id: 2, name: 'Мария Петрова', avatar: '🎨', lastMessage: 'Отправил файлы', time: '13:15', unread: 2, type: 'personal' },
-    { id: 3, name: 'Команда Разработки', avatar: '🚀', lastMessage: 'Встреча в 15:00', time: '12:48', unread: 5, type: 'group', members: 12 },
-  ]);
+  const [chats, setChats] = useState<Chat[]>([]);
 
   const [contacts, setContacts] = useState<Contact[]>([
     { id: 1, name: 'Александр Иванов', avatar: '😊', username: '@alex_ivanov' },
@@ -75,6 +80,10 @@ export default function Index() {
   const [createName, setCreateName] = useState('');
   const [createDescription, setCreateDescription] = useState('');
   const [selectedContacts, setSelectedContacts] = useState<number[]>([]);
+  const [calls, setCalls] = useState<Call[]>([]);
+  const [isInCall, setIsInCall] = useState(false);
+  const [activeCall, setActiveCall] = useState<{ contactId: number; type: 'voice' | 'video' } | null>(null);
+  const [callDuration, setCallDuration] = useState(0);
 
   const [messages, setMessages] = useState<Message[]>([
     { id: 1, text: 'Привет! Как дела?', sender: 'other', time: '14:30' },
@@ -93,6 +102,20 @@ export default function Index() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    if (isInCall) {
+      interval = setInterval(() => {
+        setCallDuration(prev => prev + 1);
+      }, 1000);
+    } else {
+      setCallDuration(0);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isInCall]);
 
   const handlePhoneSubmit = () => {
     if (phoneNumber.length >= 10) {
@@ -140,6 +163,34 @@ export default function Index() {
         ? prev.filter(id => id !== contactId)
         : [...prev, contactId]
     );
+  };
+
+  const startCall = (contactId: number, type: 'voice' | 'video') => {
+    setActiveCall({ contactId, type });
+    setIsInCall(true);
+  };
+
+  const endCall = () => {
+    if (activeCall) {
+      const newCall: Call = {
+        id: calls.length + 1,
+        contactId: activeCall.contactId,
+        type: 'outgoing',
+        callType: activeCall.type,
+        duration: formatDuration(callDuration),
+        time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+      };
+      setCalls([newCall, ...calls]);
+    }
+    setIsInCall(false);
+    setActiveCall(null);
+    setCallDuration(0);
+  };
+
+  const formatDuration = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const handleSendMessage = () => {
@@ -375,20 +426,66 @@ export default function Index() {
                       <p className="font-semibold">{contact.name}</p>
                       <p className="text-sm text-muted-foreground">{contact.username}</p>
                     </div>
-                    <Button variant="ghost" size="icon">
-                      <Icon name="MessageSquare" size={18} />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => startCall(contact.id, 'voice')}>
+                        <Icon name="Phone" size={18} />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => startCall(contact.id, 'video')}>
+                        <Icon name="Video" size={18} />
+                      </Button>
+                      <Button variant="ghost" size="icon">
+                        <Icon name="MessageSquare" size={18} />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
             </ScrollArea>
           </TabsContent>
 
-          <TabsContent value="calls" className="flex-1 p-4 m-0">
-            <div className="text-center py-12 text-muted-foreground">
-              <Icon name="PhoneCall" size={48} className="mx-auto mb-4 opacity-50" />
-              <p>История звонков пуста</p>
-            </div>
+          <TabsContent value="calls" className="flex-1 m-0">
+            {calls.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <Icon name="PhoneCall" size={48} className="mx-auto mb-4 opacity-50" />
+                <p>История звонков пуста</p>
+              </div>
+            ) : (
+              <ScrollArea className="h-[calc(100vh-180px)]">
+                {calls.map((call) => {
+                  const contact = contacts.find(c => c.id === call.contactId);
+                  if (!contact) return null;
+                  return (
+                    <div key={call.id} className="p-4 border-b border-border">
+                      <div className="flex items-center space-x-3">
+                        <Avatar>
+                          <AvatarFallback className="text-2xl">{contact.avatar}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1">
+                          <p className="font-semibold">{contact.name}</p>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Icon 
+                              name={call.type === 'incoming' ? 'PhoneIncoming' : call.type === 'outgoing' ? 'PhoneOutgoing' : 'PhoneMissed'} 
+                              size={14} 
+                              className={call.type === 'missed' ? 'text-destructive' : ''}
+                            />
+                            <span>{call.callType === 'video' ? 'Видеозвонок' : 'Звонок'}</span>
+                            {call.duration && <span>• {call.duration}</span>}
+                          </div>
+                        </div>
+                        <span className="text-xs text-muted-foreground">{call.time}</span>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => startCall(contact.id, call.callType)}
+                        >
+                          <Icon name={call.callType === 'video' ? 'Video' : 'Phone'} size={18} />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </ScrollArea>
+            )}
           </TabsContent>
 
           <TabsContent value="profile" className="flex-1 p-4 m-0 space-y-4">
@@ -620,6 +717,83 @@ export default function Index() {
             <Icon name="MessageSquare" size={64} className="mx-auto opacity-50" />
             <p className="text-xl">Выберите чат для начала общения</p>
           </div>
+        </div>
+      )}
+
+      {isInCall && activeCall && (
+        <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-lg flex items-center justify-center animate-fade-in">
+          <Card className="w-full max-w-md p-8 text-center space-y-6">
+            <div className="space-y-4">
+              <Avatar className="w-32 h-32 mx-auto">
+                <AvatarFallback className="text-6xl">
+                  {contacts.find(c => c.id === activeCall.contactId)?.avatar}
+                </AvatarFallback>
+              </Avatar>
+              <div>
+                <h2 className="text-2xl font-bold">
+                  {contacts.find(c => c.id === activeCall.contactId)?.name}
+                </h2>
+                <p className="text-muted-foreground">
+                  {activeCall.type === 'video' ? 'Видеозвонок' : 'Голосовой звонок'}
+                </p>
+              </div>
+              <div className="text-3xl font-mono text-primary">
+                {formatDuration(callDuration)}
+              </div>
+            </div>
+
+            {activeCall.type === 'video' && (
+              <div className="relative w-full aspect-video bg-muted rounded-xl overflow-hidden">
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Icon name="Video" size={48} className="opacity-30" />
+                  <p className="absolute bottom-4 text-sm text-muted-foreground">
+                    Видео активно
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-center gap-4">
+              <Button
+                variant="outline"
+                size="icon"
+                className="w-14 h-14 rounded-full"
+              >
+                <Icon name="Mic" size={24} />
+              </Button>
+              
+              {activeCall.type === 'video' && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="w-14 h-14 rounded-full"
+                >
+                  <Icon name="Video" size={24} />
+                </Button>
+              )}
+
+              <Button
+                variant="destructive"
+                size="icon"
+                className="w-16 h-16 rounded-full"
+                onClick={endCall}
+              >
+                <Icon name="PhoneOff" size={28} />
+              </Button>
+
+              <Button
+                variant="outline"
+                size="icon"
+                className="w-14 h-14 rounded-full"
+              >
+                <Icon name="Volume2" size={24} />
+              </Button>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              🔒 Защищённое соединение
+            </p>
+          </Card>
         </div>
       )}
     </div>
